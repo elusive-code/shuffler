@@ -1,6 +1,6 @@
 # Shuffler
 
-Shuffler is a plugin for IntelliJ Idea Community Edition, that performs java non-destructive source-code obfuscation.
+Shuffler is a plugin for IntelliJ Idea Community Edition, that performs non-destructive java source code obfuscation.
 
 Plugin adds "Shuffle" action to "Refactoring menu".
 This action shuffles names of private and protected classes, methods and variables in current project.
