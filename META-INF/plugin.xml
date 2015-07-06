@@ -1,0 +1,46 @@
+<idea-plugin version="2">
+  <name>Shuffler</name>
+  <description><![CDATA[
+    <p>
+        Non-destructive java source-code (not bytecode) obfuscation.
+    </p>
+    <p>
+        Plugin adds "Shuffle" action to Refactoring menu.<br>
+        This action shuffles names of private and protected classes, methods and variables in current project.<br>
+        To do so it generates Markov chains from sources in project,
+        then generates new names based on corresponding Markov chain.<br>
+        It also removes some comments.
+    </p>
+    <p>
+        Author: Vladislav Dolgikh<br>
+        Copyright: LLC Open Code, 2015
+    </p>
+  ]]>
+  </description>
+  <version>1.0</version>
+  <vendor url="http://www.o-code.ru">
+      LLC Open Code
+  </vendor>
+
+  <!-- please see http://confluence.jetbrains.net/display/IDEADEV/Build+Number+Ranges for description -->
+  <idea-version since-build="107.105"/>
+
+  <application-components>
+    <!-- Add your application components here -->
+  </application-components>
+
+  <project-components>
+    <!-- Add your project components here -->
+  </project-components>
+
+  <actions>
+      <action id="Shuffler.Shuffle" class="su.opencode.shuffler.ShuffleAction" text="Shuffle" description="Shuffle names in project">
+          <add-to-group group-id="RefactoringMenu" relative-to-action="Migrate" anchor="after"/>
+      </action>
+  </actions>
+
+  <extensions defaultExtensionNs="com.intellij">
+    <!-- Add your extensions here -->
+  </extensions>
+
+</idea-plugin>
