@@ -16,7 +16,9 @@ IntelliJ Idea 11 Community Edition or newer.
 ## Installation
 
 1. "File" -> "Settings" -> "Plugins"
+
 2a. "Browser Repositories" and find 'Shuffler' plugin
+
 2b. "Install plugin from disk" and choose path to shuffler.jar
 
 ## License
