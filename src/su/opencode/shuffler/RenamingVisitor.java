@@ -9,8 +9,6 @@
 package su.opencode.shuffler;
 
 import com.google.common.collect.Table;
-import com.intellij.openapi.application.ApplicationManager;
-import com.intellij.openapi.application.ModalityState;
 import com.intellij.psi.*;
 import com.intellij.refactoring.JavaRenameRefactoring;
 import com.intellij.refactoring.SilentJavaRenameRefactoring;
@@ -24,7 +22,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 public class RenamingVisitor extends JavaRecursiveElementWalkingVisitor {
 
-	private static int REFACTORING_ATTEMPTS = 3;
+	private static int REFACTORING_ATTEMPTS = 5;
 	private static final Set<String> JAVA_KEYWORDS;
 
 	static {
@@ -72,16 +70,11 @@ public class RenamingVisitor extends JavaRecursiveElementWalkingVisitor {
 
 		final AtomicBoolean result = new AtomicBoolean(false);
 
-		ApplicationManager.getApplication().invokeAndWait(new Runnable() {
-			@Override
-			public void run() {
-				final JavaRenameRefactoring refactoring = new SilentJavaRenameRefactoring(element.getProject(),
-																						  element, newName, checkNonJava);
-				refactoring.run();
-			}
-		}, ModalityState.defaultModalityState());
+		final JavaRenameRefactoring refactoring = new SilentJavaRenameRefactoring(element.getProject(),
+																				  element, newName, checkNonJava);
+		refactoring.run();
 
-		return result.get();
+		return true;
 	}
 
 	private void processElement(PsiElement element) {
@@ -107,7 +100,7 @@ public class RenamingVisitor extends JavaRecursiveElementWalkingVisitor {
 			return;
 		}
 
-		int attempts = 5;
+		int attempts = REFACTORING_ATTEMPTS;
 		boolean refactored = false;
 
 		String oldName = ((PsiNamedElement)element).getName();

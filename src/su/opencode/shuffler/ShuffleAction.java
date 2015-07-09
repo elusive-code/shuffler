@@ -26,6 +26,7 @@ import com.intellij.psi.search.*;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.*;
+import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
@@ -53,7 +54,7 @@ public class ShuffleAction extends AnAction {
 																						 .expireAfterAccess(2, TimeUnit.MINUTES)
 																						 .build(ROOT_METHOD_LOADER);
 
-	public static PsiMethod[] findDeepestSuperMethods(PsiMethod method) {
+	public static PsiMethod[] findDeepestSuperMethods(final PsiMethod method) {
 		try {
 			return ROOT_METHODS.get(method);
 		} catch (ExecutionException ex) {
@@ -168,80 +169,110 @@ public class ShuffleAction extends AnAction {
 
 			@Override
 			public void run(@NotNull ProgressIndicator indicator) {
-				GlobalSearchScope scope;
-				ROOT_METHODS.invalidateAll();
-				indicator.setFraction(0);
-
-				scope = GlobalSearchScopes.projectProductionScope(project);
-
-				Collection<VirtualFile> projectFiles = FileTypeIndex.getFiles(JavaFileType.INSTANCE,scope);
-				Collection<VirtualFile> markovChainSourceFiles;
-
-				if (includeLibraries) {
-					scope = new ProjectAndLibrariesScope(project);
-					markovChainSourceFiles = FileTypeIndex.getFiles(JavaFileType.INSTANCE,scope);
-				} else {
-					markovChainSourceFiles = projectFiles;
-				}
-				indicator.setFraction(0.05);
-
-				double total = markovChainSourceFiles.size();
-				int counter = 0;
-
-				MarkovBuildingVisitor chainBuilder = new MarkovBuildingVisitor();
-
-				indicator.setText("Building Markov chain");
-				LOG.info("Building Markov chain in project " + project.getName());
-				for (VirtualFile file: markovChainSourceFiles){
-					processFile(project, file, chainBuilder);
-					indicator.setText2(file.getCanonicalPath());
-					counter++;
-					indicator.setFraction(0.05+0.1*counter/total);
-				}
-				LOG.info("Markov chain building finished, renaming in project " + project.getName());
-
-				//shuffling
-				DecommentingVisitor decommenter = new DecommentingVisitor();
-				InliningVisitor inliner = null; //new InliningVisitor();
-
-				RenamingVisitor renamer = new RenamingVisitor(chainBuilder);
-				renamer.setRenamePrivate(renamePrivate);
-				renamer.setRenameProtected(renameProtected);
-				renamer.setRenamePublic(renamePublic);
-				renamer.setRenamePackage(renamePackage);
-
-				counter = 0;
-				total = projectFiles.size();
-				indicator.setText("Shuffling");
-				for (VirtualFile file : projectFiles) {
-					//LOG.info("Shuffling "+file.getName());
-					indicator.setText2(file.getCanonicalPath());
-					try {
-						processFile(project, file, decommenter, inliner, renamer);
-					} catch (Throwable ex) {
-						LOG.log(Level.WARNING, "Failed to shuffle " + file.getName(),ex);
-					}
-					counter++;
-					indicator.setFraction(0.15+0.85*counter/total);
-				}
-
-				ROOT_METHODS.invalidateAll();
-				LOG.finer("Renaming finished " + project.getName());
+				ShuffleRunner runner = new ShuffleRunner(indicator,project);
+				runner.run();
 			}
 		};
 
 		ProgressManager.getInstance().run(task);
 	}
 
-	public void processFile(Project project, VirtualFile file, PsiElementVisitor... visitors){
-		if (!file.exists()) return;
-		PsiFile psiFile = PsiManager.getInstance(project).findFile(file);
-		if (!psiFile.isWritable() || !psiFile.isPhysical()) return;
-		if (psiFile != psiFile.getOriginalElement()) return;
+	public void processFile(final Project project,final VirtualFile file,final PsiElementVisitor... visitors){
+		runInUI(new Runnable() {
 
-		for (PsiElementVisitor visitor: visitors){
-			if (visitor == null) continue;
-			psiFile.accept(visitor);
+			@Override
+			public void run() {
+				if (!file.exists()) return;
+				PsiFile psiFile = PsiManager.getInstance(project).findFile(file);
+
+				if (!psiFile.isWritable() || !psiFile.isPhysical()) return;
+				if (psiFile != psiFile.getOriginalElement()) return;
+
+				for (PsiElementVisitor visitor: visitors){
+					if (visitor == null) continue;
+					psiFile.accept(visitor);
+				}
+			}
+
+		});
+	}
+
+	private class ShuffleRunner implements Runnable {
+
+		private Project project;
+		private ProgressIndicator indicator;
+
+		private ShuffleRunner(ProgressIndicator indicator, Project project) {
+			this.indicator = indicator;
+			this.project = project;
 		}
+
+		@Override
+		public void run() {
+			GlobalSearchScope scope;
+			ROOT_METHODS.invalidateAll();
+			indicator.setFraction(0);
+
+			scope = GlobalSearchScopes.projectProductionScope(project);
+
+			Collection<VirtualFile> projectFiles = FileTypeIndex.getFiles(JavaFileType.INSTANCE,scope);
+			Collection<VirtualFile> markovChainSourceFiles;
+
+			if (includeLibraries) {
+				scope = new ProjectAndLibrariesScope(project);
+				markovChainSourceFiles = FileTypeIndex.getFiles(JavaFileType.INSTANCE,scope);
+			} else {
+				markovChainSourceFiles = projectFiles;
+			}
+			indicator.setFraction(0.05);
+
+			double total = markovChainSourceFiles.size();
+			int counter = 0;
+
+			MarkovBuildingVisitor chainBuilder = new MarkovBuildingVisitor();
+
+			indicator.setText("Building Markov chain");
+			LOG.info("Building Markov chain in project " + project.getName());
+			for (VirtualFile file: markovChainSourceFiles){
+				processFile(project, file, chainBuilder);
+				indicator.setText2(file.getCanonicalPath());
+				counter++;
+				indicator.setFraction(0.05+0.1*counter/total);
+			}
+			LOG.info("Markov chain building finished, renaming in project " + project.getName());
+
+			//shuffling
+			DecommentingVisitor decommenter = new DecommentingVisitor();
+			InliningVisitor inliner = null; //new InliningVisitor();
+
+			RenamingVisitor renamer = new RenamingVisitor(chainBuilder);
+			renamer.setRenamePrivate(renamePrivate);
+			renamer.setRenameProtected(renameProtected);
+			renamer.setRenamePublic(renamePublic);
+			renamer.setRenamePackage(renamePackage);
+
+			counter = 0;
+			total = projectFiles.size();
+			indicator.setText("Shuffling");
+
+			for (VirtualFile file : projectFiles) {
+				//LOG.info("Shuffling "+file.getName());
+				indicator.setText2(file.getCanonicalPath());
+				try {
+					processFile(project, file, decommenter, inliner, renamer);
+				} catch (Throwable ex) {
+					LOG.log(Level.WARNING, "Failed to shuffle " + file.getName(),ex);
+				}
+				counter++;
+				indicator.setFraction(0.15+0.85*counter/total);
+			}
+
+			ROOT_METHODS.invalidateAll();
+			LOG.finer("Renaming finished " + project.getName());
+		}
+	}
+
+	public static void runInUI(Runnable r){
+		new UIRunnable(r).run();
 	}
 }

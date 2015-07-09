@@ -26,18 +26,7 @@ public class InliningVisitor extends JavaRecursiveElementWalkingVisitor {
 
 		for (final InlineActionHandler handler : Extensions.getExtensions(InlineActionHandler.EP_NAME)) {
 			if (handler.canInlineElement(element)) {
-				ApplicationManager.getApplication().invokeAndWait(new Runnable() {
-					@Override
-					public void run() {
-						ApplicationManager.getApplication().runWriteAction(new Runnable() {
-							@Override
-							public void run() {
-								//TODO silently
-								handler.inlineElement(element.getProject(), null, element);
-							}
-						});
-					}
-				}, ModalityState.defaultModalityState());
+				handler.inlineElement(element.getProject(), null, element);
 				return;
 			}
 		}
