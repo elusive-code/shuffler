@@ -40,7 +40,10 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import su.opencode.shuffler.ShuffleAction;
 
-import java.util.*;
+import java.util.Collection;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Set;
 
 /*
 Overrides for silently rejecting all changes that may break code.

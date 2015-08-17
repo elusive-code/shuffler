@@ -18,6 +18,10 @@
 */
 package su.opencode.shuffler;
 
+import com.google.common.cache.Cache;
+import com.google.common.cache.CacheBuilder;
+import com.google.common.cache.CacheLoader;
+import com.google.common.cache.LoadingCache;
 import com.google.common.collect.Table;
 import com.intellij.psi.*;
 import com.intellij.refactoring.JavaRenameRefactoring;

@@ -18,14 +18,14 @@
 */
 package su.opencode.shuffler;
 
-import com.google.common.base.Strings;
 import com.google.common.collect.HashBasedTable;
 import com.google.common.collect.ImmutableTable;
 import com.google.common.collect.Table;
 import com.intellij.psi.*;
 import org.apache.commons.lang.StringUtils;
 
-import java.util.*;
+import java.util.Comparator;
+import java.util.Map;
 import java.util.regex.Pattern;
 
 public class MarkovBuildingVisitor extends JavaRecursiveElementWalkingVisitor {

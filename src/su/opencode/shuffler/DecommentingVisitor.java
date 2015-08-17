@@ -18,9 +18,6 @@
 */
 package su.opencode.shuffler;
 
-import com.intellij.openapi.application.ApplicationManager;
-import com.intellij.openapi.application.ModalityState;
-import com.intellij.openapi.command.CommandProcessor;
 import com.intellij.psi.JavaRecursiveElementWalkingVisitor;
 import com.intellij.psi.PsiComment;
 import com.intellij.psi.javadoc.PsiDocComment;

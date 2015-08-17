@@ -20,8 +20,6 @@ package su.opencode.shuffler;
 
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ModalityState;
-import com.intellij.refactoring.JavaRenameRefactoring;
-import com.intellij.refactoring.SilentJavaRenameRefactoring;
 
 public class UIRunnable implements Runnable {
 

@@ -19,8 +19,6 @@
 package su.opencode.shuffler;
 
 import com.intellij.lang.refactoring.InlineActionHandler;
-import com.intellij.openapi.application.ApplicationManager;
-import com.intellij.openapi.application.ModalityState;
 import com.intellij.openapi.extensions.Extensions;
 import com.intellij.psi.*;
 
