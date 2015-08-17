@@ -31,6 +31,7 @@ import org.apache.commons.lang.Validate;
 
 import java.lang.reflect.Field;
 import java.util.*;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -63,6 +64,17 @@ public class RenamingVisitor extends JavaRecursiveElementWalkingVisitor {
 	private boolean renamePublic = false;
 	private boolean renamePackage = false;
 
+	private Set<String> ignoreMarkerAnnotations = new HashSet<String>();
+
+	private CacheLoader<String,Boolean> markerCacheLoader = new CacheLoader(){
+		@Override
+		public Object load(Object o) throws Exception {
+			return isIgnoreMarker((String)o);
+		}
+	};
+	private LoadingCache<String,Boolean> ignoreMarkerFlagsCache = CacheBuilder.newBuilder()
+																		.build(markerCacheLoader);
+
 	public RenamingVisitor(Table<String, String, Double> variableChains,
 						   Table<String, String, Double> classChains,
 						   Table<String, String, Double> methodChains) {
@@ -72,6 +84,12 @@ public class RenamingVisitor extends JavaRecursiveElementWalkingVisitor {
 		this.classChains = classChains;
 		this.methodChains = methodChains;
 		this.variableChains = variableChains;
+
+		Set<String> ignoreMarkers = new HashSet<String>();
+		ignoreMarkers.add("javax.persistence.*");
+		ignoreMarkers.add("org.hibernate.*");
+		this.ignoreMarkerAnnotations = Collections.unmodifiableSet(ignoreMarkers);
+
 	}
 
 	public RenamingVisitor(MarkovBuildingVisitor markovBuilder) {
@@ -93,6 +111,8 @@ public class RenamingVisitor extends JavaRecursiveElementWalkingVisitor {
 
 	private void processElement(PsiElement element) {
 		if (element == null || !(element instanceof PsiModifierListOwner)) return;
+		PsiModifierListOwner el = (PsiModifierListOwner) element;
+
 		if (!element.isWritable()) return;
 		if (!element.isPhysical()) return;
 		if (element instanceof PsiTypeParameter) return;
@@ -101,16 +121,17 @@ public class RenamingVisitor extends JavaRecursiveElementWalkingVisitor {
 		if (!(element instanceof PsiNamedElement) || ((PsiNamedElement)element).getName() == null) return;
 		if (element.getOriginalElement() != element) return;
 
-		boolean isPrivate = ((PsiModifierListOwner)element).hasModifierProperty(PsiModifier.PRIVATE);
-		boolean isProtected = ((PsiModifierListOwner)element).hasModifierProperty(PsiModifier.PROTECTED);
-		boolean isPublic = ((PsiModifierListOwner)element).hasModifierProperty(PsiModifier.PUBLIC);
-		boolean isPackage = ((PsiModifierListOwner)element).hasModifierProperty(PsiModifier.PACKAGE_LOCAL)
+		boolean isPrivate = el.hasModifierProperty(PsiModifier.PRIVATE);
+		boolean isProtected = el.hasModifierProperty(PsiModifier.PROTECTED);
+		boolean isPublic = el.hasModifierProperty(PsiModifier.PUBLIC);
+		boolean isPackage = el.hasModifierProperty(PsiModifier.PACKAGE_LOCAL)
 			&& !(element instanceof PsiLocalVariable);
 
 		if (isPrivate && !renamePrivate
 			|| isProtected && !renameProtected
 			|| isPublic && !renamePublic
-			|| isPackage && !renamePackage) {
+			|| isPackage && !renamePackage
+			|| ignoreMarkerPresent(el)) {
 			return;
 		}
 
@@ -223,6 +244,48 @@ public class RenamingVisitor extends JavaRecursiveElementWalkingVisitor {
 		sb.deleteCharAt(0);
 		return sb.toString();
 	}
+
+	protected boolean ignoreMarkerPresent(PsiModifierListOwner element) {
+		if (element == null) return false;
+		PsiModifierList modifierList = element.getModifierList();
+
+		if (modifierList != null && modifierList.getChildren() != null) {
+			for (PsiElement mod : modifierList.getChildren()) {
+				if (!(mod instanceof PsiAnnotation)) continue;
+				PsiAnnotation annotation = (PsiAnnotation)mod;
+				try {
+					if (ignoreMarkerFlagsCache.get(annotation.getQualifiedName())) {
+						return true;
+					}
+				} catch (ExecutionException ex) {
+
+					return true;
+				}
+			}
+		}
+
+		PsiElement parent = element.getParent();
+		while (parent != null && !(parent instanceof PsiModifierListOwner)) {
+			parent = parent.getParent();
+			if (parent instanceof PsiFileSystemItem) {
+				parent = null;
+			}
+		}
+		return ignoreMarkerPresent((PsiModifierListOwner)parent);
+	}
+
+	protected boolean isIgnoreMarker(String name) {
+		if (ignoreMarkerAnnotations.contains(name)) return true;
+		String[] nameParts = name.split(".");
+		StringBuilder sb = new StringBuilder();
+		for (String part: nameParts){
+			if (ignoreMarkerAnnotations.contains(sb.append(part).append(".").toString()+"*")) {
+				return true;
+			}
+		}
+		return false;
+	}
+
 
 	@Override
 	public void visitVariable(PsiVariable element) {
