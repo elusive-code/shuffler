@@ -264,6 +264,28 @@ public class RenamingVisitor extends JavaRecursiveElementWalkingVisitor {
 			}
 		}
 
+		if (element instanceof PsiMethod){
+			PsiMethod method = (PsiMethod) element;
+			HierarchicalMethodSignature signature = method.getHierarchicalMethodSignature();
+			List<HierarchicalMethodSignature> signatureList = signature != null
+															  ? signature.getSuperSignatures()
+															  : (List)Collections.emptyList();
+			for (HierarchicalMethodSignature parent: signatureList){
+				if (ignoreMarkerPresent(parent.getMethod())){
+					return true;
+				}
+			}
+		}
+
+		if (element instanceof PsiClass) {
+			PsiClass clazz = (PsiClass) element;
+			for (PsiClass c: clazz.getSupers()){
+				if (ignoreMarkerPresent(c)){
+					return true;
+				}
+			}
+		}
+
 		PsiElement parent = element.getParent();
 		while (parent != null && !(parent instanceof PsiModifierListOwner)) {
 			parent = parent.getParent();
@@ -276,7 +298,7 @@ public class RenamingVisitor extends JavaRecursiveElementWalkingVisitor {
 
 	protected boolean isIgnoreMarker(String name) {
 		if (ignoreMarkerAnnotations.contains(name)) return true;
-		String[] nameParts = name.split(".");
+		String[] nameParts = name.split("\\.");
 		StringBuilder sb = new StringBuilder();
 		for (String part: nameParts){
 			if (ignoreMarkerAnnotations.contains(sb.append(part).append(".").toString()+"*")) {
