@@ -24,11 +24,13 @@ import com.google.common.cache.CacheLoader;
 import com.google.common.cache.LoadingCache;
 import com.google.common.collect.Table;
 import com.intellij.psi.*;
+import com.intellij.psi.search.searches.OverridingMethodsSearch;
 import com.intellij.refactoring.JavaRenameRefactoring;
 import com.intellij.refactoring.SilentJavaRenameRefactoring;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.lang.Validate;
 
+import java.io.Serializable;
 import java.lang.reflect.Field;
 import java.util.*;
 import java.util.concurrent.ExecutionException;
@@ -87,9 +89,12 @@ public class RenamingVisitor extends JavaRecursiveElementWalkingVisitor {
 
 		Set<String> ignoreMarkers = new HashSet<String>();
 		ignoreMarkers.add("javax.persistence.*");
+		ignoreMarkers.add("javax.xml.bind.*");
 		ignoreMarkers.add("org.hibernate.*");
+		ignoreMarkers.add("org.codehaus.jackson.*");
+		ignoreMarkers.add("com.fasterxml.jackson.*");
+		ignoreMarkers.add("org.springframework.beans.factory.annotation.Autowired");
 		this.ignoreMarkerAnnotations = Collections.unmodifiableSet(ignoreMarkers);
-
 	}
 
 	public RenamingVisitor(MarkovBuildingVisitor markovBuilder) {
@@ -99,8 +104,6 @@ public class RenamingVisitor extends JavaRecursiveElementWalkingVisitor {
 	protected boolean refactor(final PsiElement element,
 							   final String newName,
 							   final boolean checkNonJava) {
-
-		final AtomicBoolean result = new AtomicBoolean(false);
 
 		final JavaRenameRefactoring refactoring = new SilentJavaRenameRefactoring(element.getProject(),
 																				  element, newName, checkNonJava);
@@ -131,7 +134,8 @@ public class RenamingVisitor extends JavaRecursiveElementWalkingVisitor {
 			|| isProtected && !renameProtected
 			|| isPublic && !renamePublic
 			|| isPackage && !renamePackage
-			|| ignoreMarkerPresent(el)) {
+			|| ignoreMarkerPresent(el)
+			|| isSerializable(el)) {
 			return;
 		}
 
@@ -154,6 +158,25 @@ public class RenamingVisitor extends JavaRecursiveElementWalkingVisitor {
 				refactored = refactor(element, newName, isPublic);
 			}
 		}
+	}
+
+	protected boolean isPublic(PsiModifierListOwner element) {
+		if (element.hasModifierProperty(PsiModifier.PUBLIC)){
+			return true;
+		}
+		if (element.hasModifierProperty(PsiModifier.PRIVATE)){
+			return false;
+		}
+		if (element instanceof PsiMethod){
+			Iterator<PsiMethod> i = OverridingMethodsSearch.search((PsiMethod)element).iterator();
+			while (i.hasNext()){
+				PsiMethod method = i.next();
+				if (method.hasModifierProperty(PsiModifier.PUBLIC)){
+					return true;
+				}
+			}
+		}
+		return false;
 	}
 
 	protected String generateName(PsiElement element) {
@@ -243,6 +266,18 @@ public class RenamingVisitor extends JavaRecursiveElementWalkingVisitor {
 		}
 		sb.deleteCharAt(0);
 		return sb.toString();
+	}
+
+	protected boolean isSerializable(PsiModifierListOwner element) {
+		if (element instanceof PsiField){
+			PsiClass[] supers = ((PsiField) element).getContainingClass().getSupers();
+			for (PsiClass sup: supers) {
+				if (sup.getQualifiedName().equals(Serializable.class.getName())){
+					return true;
+				}
+			}
+		}
+		return false;
 	}
 
 	protected boolean ignoreMarkerPresent(PsiModifierListOwner element) {
