@@ -116,26 +116,7 @@ public class RenamingVisitor extends JavaRecursiveElementWalkingVisitor {
 		if (element == null || !(element instanceof PsiModifierListOwner)) return;
 		PsiModifierListOwner el = (PsiModifierListOwner) element;
 
-		if (!element.isWritable()) return;
-		if (!element.isPhysical()) return;
-		if (element instanceof PsiTypeParameter) return;
-		if (element instanceof PsiMethod &&
-			(((PsiMethod)element).isConstructor() || !isMethodDeclaration((PsiMethod)element))) return;
-		if (!(element instanceof PsiNamedElement) || ((PsiNamedElement)element).getName() == null) return;
-		if (element.getOriginalElement() != element) return;
-
-		boolean isPrivate = el.hasModifierProperty(PsiModifier.PRIVATE);
-		boolean isProtected = el.hasModifierProperty(PsiModifier.PROTECTED);
-		boolean isPublic = el.hasModifierProperty(PsiModifier.PUBLIC);
-		boolean isPackage = el.hasModifierProperty(PsiModifier.PACKAGE_LOCAL)
-			&& !(element instanceof PsiLocalVariable);
-
-		if (isPrivate && !renamePrivate
-			|| isProtected && !renameProtected
-			|| isPublic && !renamePublic
-			|| isPackage && !renamePackage
-			|| ignoreMarkerPresent(el)
-			|| isSerializable(el)) {
+		if (ignoreElement(el)) {
 			return;
 		}
 
@@ -155,28 +136,28 @@ public class RenamingVisitor extends JavaRecursiveElementWalkingVisitor {
 						 || oldName.equals(newName)));
 
 			if (attempts > 0 && !StringUtils.isBlank(newName)) {
-				refactored = refactor(element, newName, isPublic);
+				refactored = refactor(element, newName, false);
 			}
 		}
 	}
 
-	protected boolean isPublic(PsiModifierListOwner element) {
-		if (element.hasModifierProperty(PsiModifier.PUBLIC)){
-			return true;
-		}
-		if (element.hasModifierProperty(PsiModifier.PRIVATE)){
-			return false;
-		}
-		if (element instanceof PsiMethod){
-			Iterator<PsiMethod> i = OverridingMethodsSearch.search((PsiMethod)element).iterator();
-			while (i.hasNext()){
-				PsiMethod method = i.next();
-				if (method.hasModifierProperty(PsiModifier.PUBLIC)){
-					return true;
-				}
-			}
-		}
-		return false;
+	protected boolean ignoreElement(PsiModifierListOwner element){
+		if (element == null) return true;
+		if (!element.isWritable()) return true;
+		if (!element.isPhysical()) return true;
+		if (element instanceof PsiTypeParameter) return true;
+		if (element instanceof PsiMethod &&
+			(((PsiMethod)element).isConstructor() || !isMethodDeclaration((PsiMethod)element))) return true;
+		if (!(element instanceof PsiNamedElement) || ((PsiNamedElement)element).getName() == null) return true;
+		if (element.getOriginalElement() != element) return true;
+
+		return isOverride(element)
+			|| !renamePrivate && isPrivate(element)
+			|| !renameProtected && isProtected(element)
+			|| !renamePackage && isPackage(element)
+			|| !renamePublic && isPublic(element)
+			|| ignoreMarkerPresent(element)
+			|| isSerializable(element);
 	}
 
 	protected String generateName(PsiElement element) {
@@ -266,6 +247,46 @@ public class RenamingVisitor extends JavaRecursiveElementWalkingVisitor {
 		}
 		sb.deleteCharAt(0);
 		return sb.toString();
+	}
+
+	protected boolean isOverride(PsiModifierListOwner element){
+		if (!(element instanceof PsiMethod)){
+			return false;
+		}
+		PsiMethod method = (PsiMethod) element;
+		List<HierarchicalMethodSignature> supers = method.getHierarchicalMethodSignature().getSuperSignatures();
+		return supers != null && supers.size() > 0;
+	}
+
+	protected boolean isPublic(PsiModifierListOwner element) {
+		if (element.hasModifierProperty(PsiModifier.PUBLIC)){
+			return true;
+		}
+		if (element.hasModifierProperty(PsiModifier.PRIVATE)){
+			return false;
+		}
+		if (element instanceof PsiMethod){
+			Iterator<PsiMethod> i = OverridingMethodsSearch.search((PsiMethod)element).iterator();
+			while (i.hasNext()){
+				PsiMethod method = i.next();
+				if (method.hasModifierProperty(PsiModifier.PUBLIC)){
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+
+	protected boolean isPrivate(PsiModifierListOwner element){
+		return element.hasModifierProperty(PsiModifier.PRIVATE);
+	}
+
+	protected boolean isProtected(PsiModifierListOwner element){
+		return element.hasModifierProperty(PsiModifier.PROTECTED);
+	}
+
+	protected boolean isPackage(PsiModifierListOwner element){
+		return element.hasModifierProperty(PsiModifier.PACKAGE_LOCAL) && !(element instanceof PsiLocalVariable);
 	}
 
 	protected boolean isSerializable(PsiModifierListOwner element) {
