@@ -63,8 +63,9 @@ public class RenamingVisitor extends JavaRecursiveElementWalkingVisitor {
 
 	private boolean renamePrivate = true;
 	private boolean renameProtected = true;
-	private boolean renamePublic = false;
 	private boolean renamePackage = false;
+	private boolean renameDefault = false;
+    private boolean renamePublic = false;
 
 	private Set<String> ignoreMarkerAnnotations = new HashSet<String>();
 
@@ -150,11 +151,14 @@ public class RenamingVisitor extends JavaRecursiveElementWalkingVisitor {
 			(((PsiMethod)element).isConstructor() || !isMethodDeclaration((PsiMethod)element))) return true;
 		if (!(element instanceof PsiNamedElement) || ((PsiNamedElement)element).getName() == null) return true;
 		if (element.getOriginalElement() != element) return true;
+        		if (element instanceof PsiLocalVariable) return false;
+
 
 		return isOverride(element)
 			|| !renamePrivate && isPrivate(element)
 			|| !renameProtected && isProtected(element)
 			|| !renamePackage && isPackage(element)
+			|| !renameDefault && isDefault(element)
 			|| !renamePublic && isPublic(element)
 			|| ignoreMarkerPresent(element)
 			|| isSerializable(element);
@@ -289,6 +293,10 @@ public class RenamingVisitor extends JavaRecursiveElementWalkingVisitor {
 		return element.hasModifierProperty(PsiModifier.PACKAGE_LOCAL) && !(element instanceof PsiLocalVariable);
 	}
 
+    protected boolean isDefault(PsiModifierListOwner element){
+        return element.hasModifierProperty(PsiModifier.DEFAULT) && !(element instanceof PsiLocalVariable);
+    }
+
 	protected boolean isSerializable(PsiModifierListOwner element) {
 		if (element instanceof PsiField){
 			PsiClass[] supers = ((PsiField) element).getContainingClass().getSupers();
@@ -415,7 +423,15 @@ public class RenamingVisitor extends JavaRecursiveElementWalkingVisitor {
 		this.renamePackage = renamePackage;
 	}
 
-	private static boolean isMethodDeclaration(PsiMethod element) {
+    public boolean isRenameDefault() {
+        return renameDefault;
+    }
+
+    public void setRenameDefault(boolean renameDefault) {
+        this.renameDefault = renameDefault;
+    }
+
+    private static boolean isMethodDeclaration(PsiMethod element) {
 		if (element == null) return false;
 		PsiMethod[] sups = ShuffleAction.findDeepestSuperMethods(element);
 		if (sups == null || sups.length == 0) return true;

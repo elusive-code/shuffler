@@ -24,6 +24,8 @@ import com.google.common.cache.LoadingCache;
 import com.intellij.ide.highlighter.JavaFileType;
 import com.intellij.openapi.actionSystem.AnAction;
 import com.intellij.openapi.actionSystem.AnActionEvent;
+import com.intellij.openapi.actionSystem.DataKeys;
+import com.intellij.openapi.module.Module;
 import com.intellij.openapi.progress.ProgressIndicator;
 import com.intellij.openapi.progress.ProgressManager;
 import com.intellij.openapi.progress.Task;
@@ -51,6 +53,7 @@ public class ShuffleAction extends AnAction {
 	private boolean renamePackage = true;
 	private boolean renameProtected = true;
 	private boolean renamePrivate = true;
+	private boolean renameDefault = true;
 
 	private static final CacheLoader<PsiMethod, PsiMethod[]> ROOT_METHOD_LOADER = new CacheLoader<PsiMethod, PsiMethod[]>() {
 		@Override
@@ -164,21 +167,45 @@ public class ShuffleAction extends AnAction {
 	public void actionPerformed(AnActionEvent anActionEvent) {
 		final Project project = anActionEvent.getProject();
 
-		int exitCode = Messages.showOkCancelDialog(project,
-			"Varaiable, class, and method names will be shuffled in current project, comments will be removed. \n" +
-			"It will block Idea and may take awhile. \n" +
-			"Do you want to shuffle?",
+
+        final GlobalSearchScope scope;
+        String scopeName;
+        PsiElement psiElement = DataKeys.TARGET_PSI_ELEMENT.getData(anActionEvent.getDataContext());
+        VirtualFile directory = DataKeys.VIRTUAL_FILE.getData(anActionEvent.getDataContext());
+        Module module = DataKeys.TARGET_MODULE.getData(anActionEvent.getDataContext());
+        module = module != null ? module : DataKeys.MODULE.getData(anActionEvent.getDataContext());
+        module = module != null ? module : DataKeys.MODULE_CONTEXT.getData(anActionEvent.getDataContext());
+
+        if (psiElement != null && psiElement instanceof PsiDirectory) {
+            directory = ((PsiDirectory) psiElement).getVirtualFile();
+            scope = GlobalSearchScopes.directoryScope(project, directory, true);
+            scopeName = directory.getName();
+        } else if (directory != null) {
+            scope = GlobalSearchScopes.directoryScope(project, directory, true);
+            scopeName = directory.getName();
+        } else if (module != null) {
+            scope = module.getModuleScope();
+            scopeName = module.getName();
+        } else {
+            scope = GlobalSearchScopes.projectProductionScope(project);
+            scopeName = project.getName();
+        }
+
+        String warning = String.format("Varaiable, class, and method names will be shuffled in %s, comments will be removed. \n" +
+                                       "It will block Idea and may take awhile. \n" +
+                                       "Do you want to shuffle?", scopeName);
+
+		int exitCode = Messages.showOkCancelDialog(project, warning,
 			"Shuffle project?",
 			"Shuffle","Cancel",null);
 
-		if (DialogWrapper.CANCEL_EXIT_CODE == exitCode) return;
-
+		if (DialogWrapper.OK_EXIT_CODE != exitCode) return;
 
 		Task task = new Task.Modal(project,"Shuffling",false){
 
 			@Override
 			public void run(@NotNull ProgressIndicator indicator) {
-				ShuffleRunner runner = new ShuffleRunner(indicator,project);
+				ShuffleRunner runner = new ShuffleRunner(indicator,project,scope);
 				runner.run();
 			}
 		};
@@ -208,80 +235,88 @@ public class ShuffleAction extends AnAction {
 
 	private class ShuffleRunner implements Runnable {
 
-		private Project project;
-		private ProgressIndicator indicator;
+        private Project           project;
+        private ProgressIndicator indicator;
+        private GlobalSearchScope shuffleScope;
 
-		private ShuffleRunner(ProgressIndicator indicator, Project project) {
-			this.indicator = indicator;
-			this.project = project;
-		}
+        private ShuffleRunner(ProgressIndicator indicator, Project project, GlobalSearchScope scope) {
+            this.indicator = indicator;
+            this.project = project;
+            if (scope == null) {
+                scope = GlobalSearchScopes.projectProductionScope(project);
+            }
+            this.shuffleScope = scope;
+        }
 
-		@Override
-		public void run() {
-			GlobalSearchScope scope;
-			ROOT_METHODS.invalidateAll();
-			indicator.setFraction(0);
+        @Override
+        public void run() {
+            ROOT_METHODS.invalidateAll();
+            indicator.setFraction(0);
 
-			scope = GlobalSearchScopes.projectProductionScope(project);
 
-			Collection<VirtualFile> projectFiles = FileTypeIndex.getFiles(JavaFileType.INSTANCE,scope);
-			Collection<VirtualFile> markovChainSourceFiles;
+            GlobalSearchScope projectScope = GlobalSearchScopes.projectProductionScope(project);
 
-			if (includeLibraries) {
-				scope = new ProjectAndLibrariesScope(project);
-				markovChainSourceFiles = FileTypeIndex.getFiles(JavaFileType.INSTANCE,scope);
-			} else {
-				markovChainSourceFiles = projectFiles;
-			}
-			indicator.setFraction(0.05);
+            Collection<VirtualFile> projectFiles = FileTypeIndex.getFiles(JavaFileType.INSTANCE, projectScope);
+            Collection<VirtualFile> markovChainSourceFiles;
 
-			double total = markovChainSourceFiles.size();
-			int counter = 0;
+            if (includeLibraries) {
+                projectScope = new ProjectAndLibrariesScope(project);
+                markovChainSourceFiles = FileTypeIndex.getFiles(JavaFileType.INSTANCE, projectScope);
+            } else {
+                markovChainSourceFiles = projectFiles;
+            }
+            indicator.setFraction(0.05);
 
-			MarkovBuildingVisitor chainBuilder = new MarkovBuildingVisitor();
+            double total   = markovChainSourceFiles.size();
+            int    counter = 0;
 
-			indicator.setText("Building Markov chain");
-			LOG.info("Building Markov chain in project " + project.getName());
-			for (VirtualFile file: markovChainSourceFiles){
-				processFile(project, file, chainBuilder);
-				indicator.setText2(file.getCanonicalPath());
-				counter++;
-				indicator.setFraction(0.05+0.1*counter/total);
-			}
-			LOG.info("Markov chain building finished, renaming in project " + project.getName());
+            MarkovBuildingVisitor chainBuilder = new MarkovBuildingVisitor();
 
-			//shuffling
-			DecommentingVisitor decommenter = new DecommentingVisitor();
-			InliningVisitor inliner = null; //new InliningVisitor();
+            indicator.setText("Building Markov chain");
+            LOG.info("Building Markov chain in project " + project.getName());
+            for (VirtualFile file : markovChainSourceFiles) {
+                processFile(project, file, chainBuilder);
+                indicator.setText2(file.getCanonicalPath());
+                counter++;
+                indicator.setFraction(0.05 + 0.1 * counter / total);
+            }
+            LOG.info("Markov chain building finished, renaming in project " + project.getName());
 
-			RenamingVisitor renamer = new RenamingVisitor(chainBuilder);
-			renamer.setRenamePrivate(renamePrivate);
-			renamer.setRenameProtected(renameProtected);
-			renamer.setRenamePublic(renamePublic);
-			renamer.setRenamePackage(renamePackage);
+            //shuffling
+            DecommentingVisitor decommenter = new DecommentingVisitor();
+            InliningVisitor     inliner     = null; //new InliningVisitor();
 
-			counter = 0;
-			total = projectFiles.size();
-			indicator.setText("Shuffling");
+            RenamingVisitor renamer = new RenamingVisitor(chainBuilder);
+            renamer.setRenamePrivate(renamePrivate);
+            renamer.setRenameProtected(renameProtected);
+            renamer.setRenamePublic(renamePublic);
+            renamer.setRenamePackage(renamePackage);
+            renamer.setRenameDefault(renameDefault);
 
-			for (VirtualFile file : projectFiles) {
-				//LOG.info("Shuffling "+file.getName());
-				indicator.setText2(file.getCanonicalPath());
-				try {
-					processFile(project, file, decommenter, inliner, renamer);
-				} catch (Throwable ex) {
-					LOG.log(Level.WARNING, "Failed to shuffle " + file.getName(),ex);
-				}
-				counter++;
-				indicator.setFraction(0.15+0.85*counter/total);
-			}
+            counter = 0;
 
-			ROOT_METHODS.invalidateAll();
-			LOG.finer("Renaming finished " + project.getName());
-		}
-	}
+            Collection<VirtualFile> shuffledFiles = FileTypeIndex.getFiles(JavaFileType.INSTANCE, shuffleScope);
+            total = shuffledFiles.size();
+            indicator.setText("Shuffling");
 
-	public static void runInUI(Runnable r){
-		new UIRunnable(r).run();
-	}
+            for (VirtualFile file : shuffledFiles) {
+                //LOG.info("Shuffling "+file.getName());
+                indicator.setText2(file.getCanonicalPath());
+                try {
+                    processFile(project, file, decommenter, inliner, renamer);
+                } catch (Throwable ex) {
+                    LOG.log(Level.WARNING, "Failed to shuffle " + file.getName(), ex);
+                }
+                counter++;
+                indicator.setFraction(0.15 + 0.85 * counter / total);
+            }
+
+            ROOT_METHODS.invalidateAll();
+            LOG.finer("Renaming finished " + project.getName());
+        }
+    }
+
+    public static void runInUI(Runnable r) {
+        new UIRunnable(r).run();
+    }
 }
